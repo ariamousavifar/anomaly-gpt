@@ -1,6 +1,6 @@
 """
 Execute the 3x3 ablation sweep.
-Run this on the GCP VM: python -m experiments.run_sweep
+Run this on GCP or Colab: python -m experiments.run_sweep
 
 Saves results to experiments/results.csv for offline analysis.
 """
@@ -11,17 +11,17 @@ import csv
 import os
 import time
 
+import numpy as np
 import torch
 
-from data.loader import load_all_assets
+from data.loader import load_all_assets, train_val_split
 from data.tokenizer import ReturnTokenizer
-from data.sequences import prepare_dataset
 from experiments.grid import GRID, grid_to_config
 from gpt.model import GPT
 from gpt.train import train
 
 RESULTS_PATH = "experiments/results.csv"
-TICKER       = "SPY"          # train on SPY for the sweep
+TICKER       = "SPY"
 WANDB_LOG    = True
 
 
@@ -30,9 +30,9 @@ def run_sweep(wandb_log: bool = WANDB_LOG) -> None:
     print(f"Device: {device}")
     print(f"Running {len(GRID)}-point ablation sweep on {TICKER}\n")
 
-    # Download data once
     all_returns = load_all_assets(tickers=[TICKER])
     returns     = all_returns[TICKER]
+    train_ret, val_ret = train_val_split(returns)
 
     results = []
 
@@ -45,18 +45,16 @@ def run_sweep(wandb_log: bool = WANDB_LOG) -> None:
         cfg       = grid_to_config(point, wandb_log=wandb_log)
         tokenizer = ReturnTokenizer(vocab_size=point.vocab_size)
 
-        train_data, val_data, _ = prepare_dataset(
-            returns, tokenizer, point.context_length
-        )
+        train_tokens = tokenizer.encode(train_ret.values)
+        val_tokens   = tokenizer.encode(val_ret.values)
 
-        # Put data on flat tensors (not windowed) for get_batch
-        train_flat = train_data[:, 0]  # just the first token per window
-        # Actually use full flat token array
-        from data.loader import train_val_split
-        train_ret, val_ret = train_val_split(returns)
-        import numpy as np
-        train_flat = torch.tensor(tokenizer.encode(train_ret.values), dtype=torch.long)
-        val_flat   = torch.tensor(tokenizer.encode(val_ret.values),   dtype=torch.long)
+        min_len = point.context_length + 1
+        if len(train_tokens) < min_len or len(val_tokens) < min_len:
+            print(f"  SKIP: not enough tokens for context_length={point.context_length}")
+            continue
+
+        train_flat = torch.tensor(train_tokens, dtype=torch.long)
+        val_flat   = torch.tensor(val_tokens,   dtype=torch.long)
 
         model = GPT(
             vocab_size     = point.vocab_size,
@@ -68,27 +66,31 @@ def run_sweep(wandb_log: bool = WANDB_LOG) -> None:
         ).to(device)
 
         print(f"  Parameters: {model.param_count():,}")
+        print(f"  Train tokens: {len(train_flat):,} | Val tokens: {len(val_flat):,}")
 
         t0      = time.time()
         history = train(model, train_flat, val_flat, cfg, device)
         elapsed = time.time() - t0
 
-        best_val = min(history["val_loss"])
+        best_val   = min(history["val_loss"])
         best_train = min(history["train_loss"])
 
         results.append({
-            "run_name":       point.run_name,
-            "vocab_size":     point.vocab_size,
-            "context_length": point.context_length,
-            "best_val_loss":  round(best_val, 4),
+            "run_name":        point.run_name,
+            "vocab_size":      point.vocab_size,
+            "context_length":  point.context_length,
+            "best_val_loss":   round(best_val,   4),
             "best_train_loss": round(best_train, 4),
-            "params":         model.param_count(),
-            "elapsed_s":      round(elapsed, 1),
+            "params":          model.param_count(),
+            "elapsed_s":       round(elapsed, 1),
         })
 
         print(f"  Best val loss: {best_val:.4f} | Time: {elapsed:.1f}s")
 
-    # Save results
+    if not results:
+        print("No results — all runs skipped.")
+        return
+
     os.makedirs("experiments", exist_ok=True)
     with open(RESULTS_PATH, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=results[0].keys())
@@ -101,12 +103,12 @@ def run_sweep(wandb_log: bool = WANDB_LOG) -> None:
 
 def _print_summary(results: list[dict]) -> None:
     print("\n=== SWEEP SUMMARY ===")
-    print(f"{'Run':<12} {'Vocab':>6} {'Context':>8} {'Val Loss':>10} {'Train Loss':>11}")
-    print("-" * 55)
+    print(f"{'Run':<12} {'Vocab':>6} {'Context':>8} {'Val Loss':>10} {'Time(s)':>8}")
+    print("-" * 50)
     for r in sorted(results, key=lambda x: x["best_val_loss"]):
         print(
             f"{r['run_name']:<12} {r['vocab_size']:>6} {r['context_length']:>8} "
-            f"{r['best_val_loss']:>10.4f} {r['best_train_loss']:>11.4f}"
+            f"{r['best_val_loss']:>10.4f} {r['elapsed_s']:>8.1f}"
         )
 
 
