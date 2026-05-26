@@ -162,6 +162,4 @@ This is a **research platform**, not a trading signal.
 
 ## Courses
 
-Built from: Deep Learning (University of Geneva, 2024)
-
 W&B experiment tracking: [https://api.wandb.ai/links/ariamosavefar-universit-de-gen-ve/icnkshoa](https://api.wandb.ai/links/ariamosavefar-universit-de-gen-ve/icnkshoa)
