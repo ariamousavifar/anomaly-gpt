@@ -158,8 +158,12 @@ This is a **research platform**, not a trading signal.
 - Results are evaluated in-sample on known events — not a forward-looking backtest
 - A combined detector (GPT OR rolling vol) achieves 5/7 — complementarity matters
 
----
 
-## Courses
 
-W&B experiment tracking: [https://api.wandb.ai/links/ariamosavefar-universit-de-gen-ve/icnkshoa](https://api.wandb.ai/links/ariamosavefar-universit-de-gen-ve/icnkshoa)
+## Model Weights
+
+Pretrained checkpoint hosted on Hugging Face: [AriaMF/anomaly-gpt](https://huggingface.co/AriaMF/anomaly-gpt)
+
+## Experiment Tracking
+
+Training runs and metrics: [Weights & Biases](https://api.wandb.ai/links/ariamosavefar-universit-de-gen-ve/icnkshoa)
