@@ -164,4 +164,4 @@ This is a **research platform**, not a trading signal.
 
 Built from: Deep Learning (University of Geneva, 2024)
 
-W&B experiment tracking: [wandb.ai/ariamousavifar/anomaly-gpt](https://wandb.ai/ariamousavifar/anomaly-gpt)
+W&B experiment tracking: [https://api.wandb.ai/links/ariamosavefar-universit-de-gen-ve/icnkshoa](https://api.wandb.ai/links/ariamosavefar-universit-de-gen-ve/icnkshoa)
