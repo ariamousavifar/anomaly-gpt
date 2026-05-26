@@ -2,7 +2,7 @@
 
 **GPT-based financial anomaly detector**: next-token perplexity as a market surprise score, evaluated on 7 historical crises against rolling volatility, EWMA, and Isolation Forest baselines.
 
-[![CI](https://github.com/ariamousavifar/anomaly-gpt/actions/workflows/ci.yml/badge.svg)](https://github.com/ariamousavifar/anomaly-gpt/actions)
+[![CI](https://github.com/AriaMF/anomaly-gpt/actions/workflows/ci.yml/badge.svg)](https://github.com/AriaMF/anomaly-gpt/actions)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![PyTorch](https://img.shields.io/badge/pytorch-2.x-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -103,7 +103,7 @@ anomaly-gpt/
 ## Quickstart
 
 ```bash
-git clone https://github.com/ariamousavifar/anomaly-gpt.git
+git clone https://github.com/AriaMF/anomaly-gpt.git
 cd anomaly-gpt
 pip install -r requirements.txt
 
