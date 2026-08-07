@@ -6,7 +6,6 @@ caches to disk to avoid repeated API calls.
 
 from __future__ import annotations
 
-import os
 import pickle
 from pathlib import Path
 
@@ -22,6 +21,16 @@ ASSETS = {
     "VIX": "CBOE Volatility Index",
     "GLD": "Gold ETF",
     "TLT": "20+ Year Treasury Bond ETF",
+}
+
+# Yahoo Finance symbols. Indices are prefixed with '^' — passing the bare
+# label (e.g. "VIX") silently fetches an unrelated instrument.
+ASSET_SYMBOLS = {
+    "SPY": "SPY",
+    "QQQ": "QQQ",
+    "VIX": "^VIX",
+    "GLD": "GLD",
+    "TLT": "TLT",
 }
 
 TRAIN_START = "2010-01-01"
@@ -72,9 +81,16 @@ def load_all_assets(
     end:        str = EVAL_END,
     use_cache:  bool = True,
 ) -> dict[str, pd.Series]:
-    """Load log-returns for all assets. Returns dict {ticker: pd.Series}."""
+    """Load log-returns for all assets. Returns dict {label: pd.Series}.
+
+    Keys are labels (e.g. "VIX"); the Yahoo symbol (e.g. "^VIX") is resolved
+    via ASSET_SYMBOLS. An unrecognised label is passed through unchanged.
+    """
     tickers = tickers or list(ASSETS.keys())
-    return {t: download_returns(t, start, end, use_cache) for t in tickers}
+    return {
+        t: download_returns(ASSET_SYMBOLS.get(t, t), start, end, use_cache)
+        for t in tickers
+    }
 
 
 def train_val_split(
@@ -92,20 +108,3 @@ def train_val_split(
     train        = train_series.iloc[:-n_val]
     val          = train_series.iloc[-n_val:]
     return train, val
-
-
-def returns_summary(returns: dict[str, pd.Series]) -> pd.DataFrame:
-    """Print summary statistics for all assets."""
-    rows = []
-    for ticker, r in returns.items():
-        rows.append({
-            "ticker": ticker,
-            "n_days": len(r),
-            "start":  r.index[0].date(),
-            "end":    r.index[-1].date(),
-            "mean":   f"{r.mean():.4f}",
-            "std":    f"{r.std():.4f}",
-            "min":    f"{r.min():.4f}",
-            "max":    f"{r.max():.4f}",
-        })
-    return pd.DataFrame(rows).set_index("ticker")

@@ -1,48 +1,18 @@
 """
-Anomaly detector: converts raw scores into binary anomaly flags.
-Supports threshold-based detection with configurable sensitivity.
+Turns a continuous anomaly score series into event-level detections.
+
+Two thresholding rules are provided:
+  - score_event_window:         fixed z > 2 on the full-series mean/std
+  - score_event_window_at_rate: threshold set to flag a fixed fraction of days
+
+The second is the comparable one. A fixed z is not a common operating point
+across detectors, because score distributions differ in skew — see flag_rate.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from scipy import stats
-
-
-class ThresholdDetector:
-    """
-    Converts a continuous anomaly score series into binary flags
-    using a z-score threshold.
-
-    Args:
-        z_threshold: number of std devs above mean to flag as anomaly (default 2.0)
-        window:      rolling window for computing mean/std (None = use full series)
-    """
-
-    def __init__(self, z_threshold: float = 2.0, window: int | None = None):
-        self.z_threshold = z_threshold
-        self.window      = window
-
-    def flag(self, scores: pd.Series) -> pd.Series:
-        """
-        Returns binary series: 1 = anomaly, 0 = normal.
-        """
-        if self.window is not None:
-            mean = scores.rolling(self.window, min_periods=1).mean()
-            std  = scores.rolling(self.window, min_periods=1).std().fillna(1e-8)
-        else:
-            mean = scores.mean()
-            std  = scores.std() or 1e-8
-
-        z_scores = (scores - mean) / std
-        return (z_scores > self.z_threshold).astype(int).rename("anomaly_flag")
-
-    def z_scores(self, scores: pd.Series) -> pd.Series:
-        """Return normalized z-scores instead of binary flags."""
-        mean = scores.mean()
-        std  = scores.std() or 1e-8
-        return ((scores - mean) / std).rename("z_score")
 
 
 def score_event_window(
@@ -62,7 +32,6 @@ def score_event_window(
         lead_days:      days before peak_date where score first exceeds threshold
                         (requires baseline for comparison)
     """
-    from datetime import date
     window_scores = scores[
         (scores.index >= pd.Timestamp(window_start)) &
         (scores.index <= pd.Timestamp(window_end))
@@ -82,4 +51,46 @@ def score_event_window(
         "mean_score": float(window_scores.mean()),
         "z_score":    float(z),
         "detected":   bool(z > 2.0),
+    }
+
+
+def flag_rate(scores: pd.Series, z_threshold: float = 2.0) -> float:
+    """
+    Fraction of all days the detector flags at a given z-threshold.
+
+    A fixed z-threshold is NOT a common operating point across detectors:
+    volatility scores are strongly right-skewed while perplexity scores are
+    not, so the same z corresponds to very different false-positive rates.
+    """
+    z = (scores - scores.mean()) / (scores.std() or 1e-8)
+    return float((z > z_threshold).sum()) / len(scores)
+
+
+def score_event_window_at_rate(
+    scores:       pd.Series,
+    window_start: "date",
+    window_end:   "date",
+    rate:         float,
+) -> dict:
+    """
+    Detection with the threshold set so the detector flags exactly `rate`
+    of all days. This equalises false-positive rate across detectors and is
+    the comparable counterpart to score_event_window's fixed z-threshold.
+
+    Returns dict with threshold, max_score and detected.
+    """
+    threshold     = scores.quantile(1.0 - rate)
+    window_scores = scores[
+        (scores.index >= pd.Timestamp(window_start)) &
+        (scores.index <= pd.Timestamp(window_end))
+    ]
+
+    if len(window_scores) == 0:
+        return {"threshold": float(threshold), "max_score": np.nan, "detected": False}
+
+    max_score = window_scores.max()
+    return {
+        "threshold": float(threshold),
+        "max_score": float(max_score),
+        "detected":  bool(max_score > threshold),
     }

@@ -8,12 +8,34 @@ Training loop for GPT financial sequence model.
 
 import math
 import os
+import random
 from dataclasses import dataclass
 
+import numpy as np
 import torch
 import wandb
 
-from gpt.model import GPT
+
+
+def select_device() -> torch.device:
+    """CUDA if present, then Apple MPS, else CPU.
+
+    Checking only for CUDA silently falls back to CPU on Apple silicon,
+    which is by far the slowest option available on those machines.
+    """
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def set_seed(seed: int) -> None:
+    """Seed every RNG that affects training (init, batch sampling, dropout)."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 @dataclass
@@ -44,6 +66,9 @@ class TrainConfig:
 
     # Checkpointing
     ckpt_dir:       str   = "checkpoints"
+
+    # Reproducibility
+    seed:           int   = 0
 
 
 def get_lr(step: int, cfg: TrainConfig) -> float:
@@ -80,7 +105,13 @@ def estimate_loss(model, train_data, val_data, cfg, device, asset_id=None):
 
 
 def train(model, train_data, val_data, cfg, device, asset_id=None):
-    """Full training loop. Returns history dict with train/val losses."""
+    """Full training loop. Returns history dict with train/val losses.
+
+    Seeds from cfg.seed so batch sampling and dropout are reproducible.
+    Callers must also call set_seed(cfg.seed) before constructing the model
+    if they need weight initialisation to be reproducible too.
+    """
+    set_seed(cfg.seed)
     os.makedirs(cfg.ckpt_dir, exist_ok=True)
 
     if cfg.wandb_log:

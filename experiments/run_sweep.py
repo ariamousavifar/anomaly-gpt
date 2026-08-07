@@ -11,24 +11,24 @@ import csv
 import os
 import time
 
-import numpy as np
 import torch
 
 from data.loader import load_all_assets, train_val_split
 from data.tokenizer import ReturnTokenizer
 from experiments.grid import GRID, grid_to_config
 from gpt.model import GPT
-from gpt.train import train
+from gpt.train import select_device, set_seed, train
 
 RESULTS_PATH = "experiments/results.csv"
 TICKER       = "SPY"
 WANDB_LOG    = True
+SEEDS        = (0, 1, 2)   # every grid point is run once per seed
 
 
-def run_sweep(wandb_log: bool = WANDB_LOG) -> None:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def run_sweep(wandb_log: bool = WANDB_LOG, seeds: tuple[int, ...] = SEEDS) -> None:
+    device = select_device()
     print(f"Device: {device}")
-    print(f"Running {len(GRID)}-point ablation sweep on {TICKER}\n")
+    print(f"Running {len(GRID)}-point ablation sweep x {len(seeds)} seeds on {TICKER}\n")
 
     all_returns = load_all_assets(tickers=[TICKER])
     returns     = all_returns[TICKER]
@@ -36,56 +36,70 @@ def run_sweep(wandb_log: bool = WANDB_LOG) -> None:
 
     results = []
 
-    for i, point in enumerate(GRID):
-        print(f"\n{'='*60}")
-        print(f"Run {i+1}/{len(GRID)}: {point.run_name}")
-        print(f"  vocab_size={point.vocab_size}, context_length={point.context_length}")
-        print(f"{'='*60}")
+    total = len(GRID) * len(seeds)
+    n     = 0
 
-        cfg       = grid_to_config(point, wandb_log=wandb_log)
-        tokenizer = ReturnTokenizer(vocab_size=point.vocab_size)
+    for point in GRID:
+        for seed in seeds:
+            n += 1
+            print(f"\n{'='*60}")
+            print(f"Run {n}/{total}: {point.run_name} seed={seed}")
+            print(f"  vocab_size={point.vocab_size}, context_length={point.context_length}")
+            print(f"{'='*60}")
 
-        train_tokens = tokenizer.encode(train_ret.values)
-        val_tokens   = tokenizer.encode(val_ret.values)
+            cfg          = grid_to_config(point, wandb_log=wandb_log)
+            cfg.seed     = seed
+            cfg.run_name = f"{point.run_name}_s{seed}"
+            cfg.ckpt_dir = f"checkpoints/{cfg.run_name}"
+            tokenizer    = ReturnTokenizer(vocab_size=point.vocab_size)
 
-        min_len = point.context_length + 1
-        if len(train_tokens) < min_len or len(val_tokens) < min_len:
-            print(f"  SKIP: not enough tokens for context_length={point.context_length}")
-            continue
+            train_tokens = tokenizer.encode(train_ret.values)
+            val_tokens   = tokenizer.encode(val_ret.values)
 
-        train_flat = torch.tensor(train_tokens, dtype=torch.long)
-        val_flat   = torch.tensor(val_tokens,   dtype=torch.long)
+            min_len = point.context_length + 1
+            if len(train_tokens) < min_len or len(val_tokens) < min_len:
+                print(f"  SKIP: not enough tokens for context_length={point.context_length}")
+                continue
 
-        model = GPT(
-            vocab_size     = point.vocab_size,
-            context_length = point.context_length,
-            n_embd         = cfg.n_embd,
-            n_layer        = cfg.n_layer,
-            n_head         = cfg.n_head,
-            dropout        = cfg.dropout,
-        ).to(device)
+            train_flat = torch.tensor(train_tokens, dtype=torch.long)
+            val_flat   = torch.tensor(val_tokens,   dtype=torch.long)
 
-        print(f"  Parameters: {model.param_count():,}")
-        print(f"  Train tokens: {len(train_flat):,} | Val tokens: {len(val_flat):,}")
+            set_seed(seed)   # before init, so weights are reproducible too
+            model = GPT(
+                vocab_size     = point.vocab_size,
+                context_length = point.context_length,
+                n_embd         = cfg.n_embd,
+                n_layer        = cfg.n_layer,
+                n_head         = cfg.n_head,
+                dropout        = cfg.dropout,
+            ).to(device)
 
-        t0      = time.time()
-        history = train(model, train_flat, val_flat, cfg, device)
-        elapsed = time.time() - t0
+            print(f"  Parameters: {model.param_count():,}")
+            print(f"  Train tokens: {len(train_flat):,} | Val tokens: {len(val_flat):,}")
 
-        best_val   = min(history["val_loss"])
-        best_train = min(history["train_loss"])
+            t0      = time.time()
+            history = train(model, train_flat, val_flat, cfg, device)
+            elapsed = time.time() - t0
 
-        results.append({
-            "run_name":        point.run_name,
-            "vocab_size":      point.vocab_size,
-            "context_length":  point.context_length,
-            "best_val_loss":   round(best_val,   4),
-            "best_train_loss": round(best_train, 4),
-            "params":          model.param_count(),
-            "elapsed_s":       round(elapsed, 1),
-        })
+            # Pair train and val at the SAME step; a min() over each series
+            # independently yields a gap between two different points in training.
+            best_i     = history["val_loss"].index(min(history["val_loss"]))
+            best_val   = history["val_loss"][best_i]
+            train_at   = history["train_loss"][best_i]
 
-        print(f"  Best val loss: {best_val:.4f} | Time: {elapsed:.1f}s")
+            results.append({
+                "run_name":            point.run_name,
+                "seed":                seed,
+                "vocab_size":          point.vocab_size,
+                "context_length":      point.context_length,
+                "best_val_loss":       round(best_val, 4),
+                "train_loss_at_best":  round(train_at, 4),
+                "gap_at_best":         round(train_at - best_val, 4),
+                "params":              model.param_count(),
+                "elapsed_s":           round(elapsed, 1),
+            })
+
+            print(f"  Best val loss: {best_val:.4f} | Time: {elapsed:.1f}s")
 
     if not results:
         print("No results — all runs skipped.")
@@ -102,14 +116,29 @@ def run_sweep(wandb_log: bool = WANDB_LOG) -> None:
 
 
 def _print_summary(results: list[dict]) -> None:
-    print("\n=== SWEEP SUMMARY ===")
-    print(f"{'Run':<12} {'Vocab':>6} {'Context':>8} {'Val Loss':>10} {'Time(s)':>8}")
-    print("-" * 50)
-    for r in sorted(results, key=lambda x: x["best_val_loss"]):
+    """Aggregate across seeds. Differences smaller than the seed spread are noise."""
+    import pandas as pd
+
+    df = pd.DataFrame(results)
+    agg = (
+        df.groupby(["run_name", "vocab_size", "context_length"])["best_val_loss"]
+        .agg(["mean", "std", "min", "max", "count"])
+        .reset_index()
+        .sort_values("mean")
+    )
+
+    print("\n=== SWEEP SUMMARY (mean +/- std across seeds) ===")
+    print(f"{'Run':<12} {'Vocab':>6} {'Context':>8} {'Val Loss':>18} {'Seeds':>6}")
+    print("-" * 56)
+    for _, r in agg.iterrows():
+        cell = f"{r['mean']:.4f} +/- {r['std']:.4f}"
         print(
-            f"{r['run_name']:<12} {r['vocab_size']:>6} {r['context_length']:>8} "
-            f"{r['best_val_loss']:>10.4f} {r['elapsed_s']:>8.1f}"
+            f"{r['run_name']:<12} {int(r['vocab_size']):>6} {int(r['context_length']):>8} "
+            f"{cell:>18} {int(r['count']):>6}"
         )
+
+    print(f"\nMean seed-to-seed std: {agg['std'].mean():.4f}")
+    print("Any claimed difference smaller than this is not resolvable by this sweep.")
 
 
 if __name__ == "__main__":

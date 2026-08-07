@@ -1,8 +1,14 @@
 """
 GPT decoder-only transformer for financial sequence modeling.
 Architecture: causal self-attention, multi-head, feed-forward blocks.
-Adapted from course implementation — cleaned, extended with param_count()
-and asset embedding support for multi-asset joint training.
+
+Adapted from coursework for Deep Learning, University of Geneva (2024) —
+cleaned, extended with param_count() and asset embedding support for
+multi-asset joint training.
+
+Original to this repo: the return tokenizer (data/tokenizer.py), the
+perplexity anomaly scorer (anomaly/scorer.py), the baseline detectors and
+event registry (anomaly/), and the evaluation harness (eval/).
 """
 
 import math
