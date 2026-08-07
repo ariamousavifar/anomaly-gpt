@@ -1,29 +1,37 @@
-.PHONY: install test sweep train eval plot clean
+.PHONY: install test sweep score eval plot figures clean lint
+
+# Interpreter. Override if you are not running inside an activated venv:
+#   make eval PYTHON=.venv/bin/python
+PYTHON ?= python
 
 install:
-	pip install -r requirements.txt
+	$(PYTHON) -m pip install -r requirements.txt
 
 test:
-	pytest tests/ -v --tb=short
+	$(PYTHON) -m pytest tests/ -v --tb=short
 
+# Ablation grid: 9 configs x 3 seeds -> experiments/results.csv
 sweep:
-	python -m experiments.run_sweep
+	$(PYTHON) -m experiments.run_sweep
 
+# Regenerate anomaly_scores.csv from the trained checkpoint
+score:
+	$(PYTHON) -m scripts.score_assets
+
+# Every published detection number, at both operating points
 eval:
-	python -m eval.harness
+	$(PYTHON) -m scripts.run_eval
 
-plot:
-	python -c "from viz.plot import plot_anomaly_timeline; print('Run notebook for plots')"
+# Regenerate the committed figures
+figures:
+	$(PYTHON) -m scripts.make_figures
+
+plot: figures
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -name "*.pyc" -delete 2>/dev/null || true
 
 lint:
-	python -m py_compile gpt/model.py gpt/train.py data/tokenizer.py \
-		data/loader.py data/sequences.py anomaly/scorer.py \
-		anomaly/baselines.py anomaly/detector.py anomaly/events.py \
-		eval/harness.py eval/bootstrap.py eval/vix_correlation.py \
-		experiments/grid.py experiments/run_sweep.py \
-		viz/plot.py viz/heatmap.py viz/comparison.py
+	@$(PYTHON) -m py_compile $$(git ls-files '*.py' | while read f; do [ -f "$$f" ] && printf '%s ' "$$f"; done)
 	@echo "All files compile OK"

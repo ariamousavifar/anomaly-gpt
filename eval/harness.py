@@ -7,7 +7,6 @@ Produces a structured results table for FINDINGS.md.
 from __future__ import annotations
 
 import pandas as pd
-import numpy as np
 
 from anomaly.events import EVENTS, MarketEvent
 from anomaly.detector import score_event_window
@@ -69,20 +68,6 @@ def run_full_harness(
 
     df = pd.concat(results, ignore_index=True)
     return df
-
-
-def detection_summary(results: pd.DataFrame) -> pd.DataFrame:
-    """
-    Pivot table: detectors as rows, events as columns.
-    Cell = z_score (bold if detected).
-    """
-    pivot = results.pivot_table(
-        index="detector",
-        columns="event",
-        values="z_score",
-        aggfunc="first",
-    ).round(2)
-    return pivot
 
 
 def detection_counts(results: pd.DataFrame) -> pd.DataFrame:
