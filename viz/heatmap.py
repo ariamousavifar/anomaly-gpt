@@ -5,7 +5,6 @@ Ablation heatmap: vocab_size x context_length -> val_loss.
 from __future__ import annotations
 
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 

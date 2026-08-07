@@ -6,7 +6,6 @@ Compares GPT anomaly scores against VIX as ground-truth stress measure.
 from __future__ import annotations
 
 import pandas as pd
-import numpy as np
 from scipy import stats
 
 
