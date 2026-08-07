@@ -77,7 +77,7 @@ from huggingface_hub import hf_hub_download
 ckpt_path = hf_hub_download(repo_id="AriaMF/anomaly-gpt", filename="final_model.pt")
 ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
 
-# Clone the repo first: github.com/AriaMF/anomaly-gpt
+# Clone the repo first: github.com/ariamousavifar/anomaly-gpt
 from gpt.model import GPT
 model = GPT(vocab_size=3, context_length=20)
 model.load_state_dict(ckpt["model"])
@@ -114,5 +114,5 @@ baseline detectors, event registry and evaluation harness are original.
 
 ## Links
 
-- GitHub: https://github.com/AriaMF/anomaly-gpt
+- GitHub: https://github.com/ariamousavifar/anomaly-gpt
 - Weights & Biases: https://api.wandb.ai/links/ariamosavefar-universit-de-gen-ve/icnkshoa
